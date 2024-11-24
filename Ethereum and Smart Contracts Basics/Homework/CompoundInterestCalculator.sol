@@ -11,7 +11,9 @@ contract InterestCalculator {
         uint256 principal,
         uint32 rate,
         uint32 num_of_years
-    ) external pure returns (uint256 calculatedInterest) {    
+    ) external pure returns (uint256 calculatedInterest) {
+        require(principal != 0 && rate != 0, "Principal and rate must not be zero");
+
         uint256 factor = 1e18; // Scaling factor for precision
         uint256 scaledRate = (rate * factor) / 100; // Scale rate for precision
         uint256 compoundInterest = principal;
