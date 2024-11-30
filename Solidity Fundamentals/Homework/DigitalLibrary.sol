@@ -17,19 +17,25 @@ contract DigitalLibrary {
     }
 
     EBook[] public books;
+    // By default each book expires after 180 days as of publication
     uint256 public defaultExpirationDate = block.timestamp + 180 days;
-    mapping(uint256 => mapping(address => bool)) public authorizedLibrariansByBook;
+    mapping(uint256 => mapping(address => bool)) authorizedLibrariansByBook;
+
     error InvalidExpirationDate();
 
     event BookStatusChanged(EBookStatus oldStatus, EBookStatus newStatus);
     event EBookAccessed(uint256 bookId, string title, string author, uint256 readCount);
 
     function isAuthorized(uint256 bookId, address librarian) internal view returns (bool) {
-        return authorizedLibrariansByBook[bookId][librarian];
+        return books[bookId].primaryLibrarian == msg.sender || authorizedLibrariansByBook[bookId][librarian];
+    }
+
+    function isOutdated(uint256 bookId) internal view returns (bool) {
+        return books[bookId].expirationDate < block.timestamp;
     }
 
     // Creates book and returns book id (equal to array index)
-    function createBook (string memory title, string memory author, uint256 publicationDate) external returns (uint256 bookId) {
+    function createBook (string calldata title, string calldata author, uint256 publicationDate) external returns (uint256 bookId) {
         require(publicationDate > 0, "Not a valid publicationDate ");
         require(bytes(title).length != 0 || bytes(author).length != 0, "Empty title or author");
         require(bytes(title).length <= 100, "Title too long");
@@ -50,7 +56,7 @@ contract DigitalLibrary {
         
         return books.length-1;
     }
-
+    
     // Only the primary librarian can add additional authorized librarians for an e-book.
     // Returns true if successfully added
     function addLibrarian(uint256 bookId, address librarian) external returns (bool) {
@@ -76,10 +82,12 @@ contract DigitalLibrary {
         emit BookStatusChanged(oldStatus, newStatus);
     }
 
-    // Increases the read count and returns whether the e-book is outdated (real-time)
-    // based on the expiration date.
+    // Increases read count and returns if the e-book is outdated (real-time)
     function isExpired(uint256 bookId) external returns (bool) {
         books[bookId].readCount += 1;
+        if (isOutdated(bookId)) {
+            books[bookId].status = EBookStatus.Outdated;
+        }
         return books[bookId].expirationDate < block.timestamp;
     }
 
