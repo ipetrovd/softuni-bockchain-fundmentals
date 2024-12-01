@@ -54,7 +54,7 @@ contract DecentralizedSavingsAccount {
         
         SavingsAccount memory acc = savings[msg.sender][savingsPlanIndex];
 
-        return acc.lockPeriod + acc.creationTime < block.timestamp;
+        return (acc.lockPeriod + acc.creationTime) <= block.timestamp;
     }
 
     function withdrawFunds(uint256 savingsPlanIndex, uint256 amount) external payable {
