@@ -7,7 +7,7 @@ contract DecentralizedSavingsAccount {
         uint256 balance;
         address owner;
         uint256 creationTime;
-        uint256 lockPeriod;   // ● lockPeriod: The duration in seconds for which the funds are locked.
+        uint256 lockPeriod;
     }
     
     mapping(address => SavingsAccount[]) public savings;
@@ -54,7 +54,7 @@ contract DecentralizedSavingsAccount {
         
         SavingsAccount memory acc = savings[msg.sender][savingsPlanIndex];
 
-        return (acc.lockPeriod + acc.creationTime) <= block.timestamp;
+        return (acc.lockPeriod + acc.creationTime) >= block.timestamp;
     }
 
     function withdrawFunds(uint256 savingsPlanIndex, uint256 amount) external payable {
