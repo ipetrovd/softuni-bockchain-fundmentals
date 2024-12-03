@@ -19,6 +19,7 @@ contract DigitalLibrary {
     EBook[] public books;
     // By default each book expires after 180 days as of publication
     uint256 public defaultExpirationDate = block.timestamp + 180 days;
+    // Mapping of bookID => address of Librarian => bool for authorization
     mapping(uint256 => mapping(address => bool)) authorizedLibrariansByBook;
 
     error InvalidExpirationDate();
