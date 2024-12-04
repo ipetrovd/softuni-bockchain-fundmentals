@@ -16,10 +16,8 @@ contract DigitalLibrary {
         uint256 readCount;
     }
 
-    EBook[] public books;
-    // By default each book expires after 180 days as of publication
-    uint256 public defaultExpirationDate = block.timestamp + 180 days;
-    // Mapping of bookID => address of Librarian => bool for authorization
+    EBook[] private books;
+    
     mapping(uint256 => mapping(address => bool)) authorizedLibrariansByBook;
 
     error InvalidExpirationDate();
@@ -27,74 +25,96 @@ contract DigitalLibrary {
     event BookStatusChanged(EBookStatus oldStatus, EBookStatus newStatus);
     event EBookAccessed(uint256 bookId, string title, string author, uint256 readCount);
 
-    function isAuthorized(uint256 bookId, address librarian) internal view returns (bool) {
-        return books[bookId].primaryLibrarian == msg.sender || authorizedLibrariansByBook[bookId][librarian];
+    function convertBookIdToIndex(uint256 bookId) internal pure returns (uint256) {
+        return bookId - 1;
+    }
+
+    function isAuthorizedToExtend(uint256 bookId, address librarian) internal view returns (bool) {
+        require(bookId != 0, "Invalid zero bookId");
+
+        uint256 index = convertBookIdToIndex(bookId);
+        return books[index].primaryLibrarian == msg.sender || authorizedLibrariansByBook[index][librarian];
     }
 
     function isOutdated(uint256 bookId) internal view returns (bool) {
-        return books[bookId].expirationDate < block.timestamp;
+        require(bookId != 0, "Invalid zero bookId");
+
+        uint256 index = convertBookIdToIndex(bookId);
+        return books[index].expirationDate < block.timestamp;
     }
 
-    // Creates book and returns book id (equal to array index)
-    function createBook (string calldata title, string calldata author, uint256 publicationDate) external returns (uint256 bookId) {
+    // Creates book and returns book id
+    function createBook (string calldata title, string calldata author, uint256 publicationDate, uint256 expirationDate) external returns (uint256 bookId) {
         require(publicationDate > 0, "Not a valid publicationDate ");
         require(bytes(title).length != 0 || bytes(author).length != 0, "Empty title or author");
         require(bytes(title).length <= 100, "Title too long");
         require(bytes(author).length <= 100, "Author too long");
 
+        bookId = books.length + 1;
         EBook memory newBook = EBook({
-            id: books.length,
+            id: bookId,
             title: title,
             author: author,
             publicationDate: publicationDate,
-            expirationDate: defaultExpirationDate,
+            expirationDate: expirationDate,
             status: EBookStatus.Active,
             primaryLibrarian: msg.sender,
             readCount: 0
         });
         
         books.push(newBook);
-        
-        return books.length-1;
     }
     
     // Only the primary librarian can add additional authorized librarians for an e-book.
     // Returns true if successfully added
     function addLibrarian(uint256 bookId, address librarian) external returns (bool) {
-        require(msg.sender == books[bookId].primaryLibrarian, "Unauthorized primary librarian");
-        return authorizedLibrariansByBook[bookId][librarian] = true;
+        require(bookId != 0, "Invalid zero bookId");
+        uint256 index = convertBookIdToIndex(bookId);
+        require(msg.sender == books[index].primaryLibrarian, "Unauthorized primary librarian");
+
+        return authorizedLibrariansByBook[index][librarian] = true;
     }
 
     // Only authorized librarians can extend the expiration date.
-    // Returns the newExpDate if successful txn
-    function extendExpDate(uint256 bookId, uint256 newExpDate) external returns (uint256) {
-        require(isAuthorized(bookId, msg.sender), "Unauthorized librarian");
-        require(newExpDate != 0, "Expiration date cannot be zero");
-    
-        return books[bookId].expirationDate = newExpDate;
+    // Returns the extended  if successful txn
+    function extendExpDate(uint256 bookId, uint256 daysExtension) external returns (uint256) {
+        require(bookId != 0, "Invalid zero bookId");
+        require(isAuthorizedToExtend(bookId, msg.sender), "Unauthorized librarian");
+        require(daysExtension != 0, "Expiration date cannot be zero");
+
+        uint256 index = convertBookIdToIndex(bookId);
+        uint256 bookExpirationDate = books[index].expirationDate;
+        return books[index].expirationDate = bookExpirationDate + (daysExtension * 1 days);
     }
 
     // Only primary librarian can change book status
     function changeBookStatus(uint256 bookId, EBookStatus newStatus) external {
-        require(msg.sender == books[bookId].primaryLibrarian, "Not a primary librarian");
-        EBookStatus oldStatus = books[bookId].status;
-        books[bookId].status = newStatus;
+        require(bookId != 0, "Invalid zero bookId");
+        uint256 index = convertBookIdToIndex(bookId);
+        require(msg.sender == books[index].primaryLibrarian, "Not a primary librarian");
+
+        EBookStatus oldStatus = books[index].status;
+        books[index].status = newStatus;
 
         emit BookStatusChanged(oldStatus, newStatus);
     }
 
     // Increases read count and returns if the e-book is outdated (real-time)
-    function isExpired(uint256 bookId) external returns (bool) {
-        books[bookId].readCount += 1;
-        if (isOutdated(bookId)) {
-            books[bookId].status = EBookStatus.Outdated;
+    function isExpired(uint256 bookId) external returns (bool bookOutdated) {
+        require(bookId != 0, "Invalid zero bookId");
+        uint256 index = convertBookIdToIndex(bookId);
+        books[index].readCount += 1;
+        bookOutdated = isOutdated(bookId);
+        if (bookOutdated) {
+            books[index].status = EBookStatus.Outdated;
         }
-        return books[bookId].expirationDate < block.timestamp;
     }
 
     // Returns EBook and increaes read count
     function getEBook(uint256 bookId) external {
-        books[bookId].readCount += 1;
-        emit EBookAccessed(bookId, books[bookId].title, books[bookId].author, books[bookId].readCount);
+        require(bookId != 0, "Invalid zero bookId");
+        uint256 index = convertBookIdToIndex(bookId);
+        books[index].readCount += 1;
+        emit EBookAccessed(bookId, books[index].title, books[index].author, books[index].readCount);
     }
 }
