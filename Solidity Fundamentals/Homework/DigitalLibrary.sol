@@ -75,7 +75,7 @@ contract DigitalLibrary {
     }
 
     // Only primary librarian can change book status
-    function changeBookStatus(uint256 bookId, EBookStatus newStatus) external {
+    function changeStatus(uint256 bookId, EBookStatus newStatus) external {
         require(bookId != 0, "Invalid zero bookId");
         uint256 index = convertBookIdToIndex(bookId);
         require(msg.sender == books[index].primaryLibrarian, "Not a primary librarian");
@@ -86,15 +86,12 @@ contract DigitalLibrary {
         emit BookStatusChanged(oldStatus, newStatus);
     }
 
-    // Increases read count and returns if the e-book is outdated (real-time)
-    function isExpired(uint256 bookId) external returns (bool bookOutdated) {
+    // Checks if e-book is outdated (real-time) and increases read count
+    function checkExpiration(uint256 bookId) external returns (bool bookOutdated) {
         require(bookId != 0, "Invalid zero bookId");
         uint256 index = convertBookIdToIndex(bookId);
         books[index].readCount += 1;
         bookOutdated = isOutdated(bookId);
-        if (bookOutdated) {
-            books[index].status = EBookStatus.Outdated;
-        }
     }
 
     // Returns EBook and increaes read count
