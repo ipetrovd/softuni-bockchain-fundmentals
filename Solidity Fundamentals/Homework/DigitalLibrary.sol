@@ -25,26 +25,13 @@ contract DigitalLibrary {
     event BookStatusChanged(EBookStatus oldStatus, EBookStatus newStatus);
     event EBookAccessed(uint256 bookId, string title, string author, uint256 readCount);
 
-    function convertBookIdToIndex(uint256 bookId) internal pure returns (uint256) {
-        return bookId - 1;
-    }
-
-    function isAuthorizedToExtend(uint256 bookId, address librarian) internal view returns (bool) {
-        require(bookId != 0, "Invalid zero bookId");
-
-        uint256 index = convertBookIdToIndex(bookId);
-        return books[index].primaryLibrarian == msg.sender || authorizedLibrariansByBook[index][librarian];
-    }
-
-    function isOutdated(uint256 bookId) internal view returns (bool) {
-        require(bookId != 0, "Invalid zero bookId");
-
-        uint256 index = convertBookIdToIndex(bookId);
-        return books[index].expirationDate < block.timestamp;
-    }
-
     // Creates book and returns book id
-    function createBook (string calldata title, string calldata author, uint256 publicationDate, uint256 expirationDate) external returns (uint256 bookId) {
+    function createBook (
+        string calldata title,
+        string calldata author,
+        uint256 publicationDate,
+        uint256 expirationDate
+        ) external returns (uint256 bookId) {
         require(publicationDate > 0, "Not a valid publicationDate ");
         require(bytes(title).length != 0 || bytes(author).length != 0, "Empty title or author");
         require(bytes(title).length <= 100, "Title too long");
@@ -113,8 +100,33 @@ contract DigitalLibrary {
     // Returns EBook and increaes read count
     function getEBook(uint256 bookId) external {
         require(bookId != 0, "Invalid zero bookId");
+        
         uint256 index = convertBookIdToIndex(bookId);
         books[index].readCount += 1;
-        emit EBookAccessed(bookId, books[index].title, books[index].author, books[index].readCount);
+        
+        emit EBookAccessed(
+            bookId,
+            books[index].title,
+            books[index].author,
+            books[index].readCount
+            );
+    }
+
+        function convertBookIdToIndex(uint256 bookId) internal pure returns (uint256) {
+        return bookId - 1;
+    }
+
+    function isAuthorizedToExtend(uint256 bookId, address librarian) internal view returns (bool) {
+        require(bookId != 0, "Invalid zero bookId");
+
+        uint256 index = convertBookIdToIndex(bookId);
+        return books[index].primaryLibrarian == msg.sender || authorizedLibrariansByBook[index][librarian];
+    }
+
+    function isOutdated(uint256 bookId) internal view returns (bool) {
+        require(bookId != 0, "Invalid zero bookId");
+
+        uint256 index = convertBookIdToIndex(bookId);
+        return books[index].expirationDate <= block.timestamp;
     }
 }
