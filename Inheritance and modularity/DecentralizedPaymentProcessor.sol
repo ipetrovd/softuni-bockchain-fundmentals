@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 contract PaymentProcessor {
-
     struct Transaction {
         address sender;
         address receiver;
@@ -15,14 +14,25 @@ contract PaymentProcessor {
     // User to balance
     mapping(address => uint256) public balances;
     // Payment ID to specific transaction
-    mapping(uint256 => Transaction) transactions; 
+    mapping(uint256 => Transaction) transactions;
 
-    event PaymentSuccess(uint256 txnId, address sender, address receiver, uint256 amount);
+    event PaymentSuccess(
+        uint256 txnId,
+        address sender,
+        address receiver,
+        uint256 amount
+    );
     event RefundSuccess(address receiver, uint256 amount);
 
-    function transfer(address _receiver)
-        public payable nonZeroAmount(msg.value) isSelfPayment(_receiver) returns (uint256 ) {
-        
+    function transfer(
+        address _receiver
+    )
+        public
+        payable
+        nonZeroAmount(msg.value)
+        isSelfPayment(_receiver)
+        returns (uint256)
+    {
         txnId += 1;
 
         transactions[txnId] = Transaction({
@@ -33,30 +43,37 @@ contract PaymentProcessor {
         });
 
         balances[_receiver] += msg.value;
-        
+
         emit PaymentSuccess(txnId, msg.sender, _receiver, msg.value);
         return txnId;
     }
- 
+
     function checkBalance() public view returns (uint256 currentBalance) {
         currentBalance = balances[msg.sender];
     }
-    
+
     // Possible refund only if the amount is still available at the receiver
-    function refundPayment(uint256 _txnId) public payable virtual
+    function refundPayment(
+        uint256 _txnId
+    )
+        public
+        payable
+        virtual
         isTxn(_txnId)
         isEligible(_txnId)
         isDuplicateRefund(_txnId)
-        userHasAmount(transactions[_txnId].amount, transactions[_txnId].receiver) {
-        
+        userHasAmount(
+            transactions[_txnId].amount,
+            transactions[_txnId].receiver
+        )
+    {
         Transaction memory _txn = transactions[_txnId];
 
         balances[_txn.receiver] -= _txn.amount;
         balances[_txn.sender] += _txn.amount;
         transactions[_txnId].isRefunded = true;
-    
-        emit RefundSuccess(msg.sender, _txn.amount);
 
+        emit RefundSuccess(msg.sender, _txn.amount);
     }
 
     // Txn with zero amount is invalid, thus, no such txn exist
@@ -91,9 +108,7 @@ contract PaymentProcessor {
     }
 }
 
-
 contract Merchant is PaymentProcessor {
-
     address public owner;
 
     constructor() {
@@ -107,23 +122,30 @@ contract Merchant is PaymentProcessor {
 
     function setLoyal(address _customer) public onlyOwner {
         loyality[_customer] = true;
-        
+
         emit NewLoyalCustomerSuccess();
     }
 
-    function setLoyaltyBonus(uint8 percentage)
-        public nonZeroAmount(percentage) maxPercentage(percentage) onlyOwner {
+    function setLoyaltyBonus(
+        uint8 percentage
+    ) public nonZeroAmount(percentage) maxPercentage(percentage) onlyOwner {
         loyaltyBonus = percentage;
     }
 
-
-    function refundPayment(uint256 _txnId)
-        public payable override
+    function refundPayment(
+        uint256 _txnId
+    )
+        public
+        payable
+        override
         isTxn(_txnId)
         isEligible(_txnId)
         isDuplicateRefund(_txnId)
-        userHasAmount(transactions[_txnId].amount, transactions[_txnId].receiver) {
-        
+        userHasAmount(
+            transactions[_txnId].amount,
+            transactions[_txnId].receiver
+        )
+    {
         Transaction memory _txn = transactions[_txnId];
 
         balances[_txn.receiver] -= _txn.amount;
@@ -135,14 +157,15 @@ contract Merchant is PaymentProcessor {
         }
 
         transactions[_txnId].isRefunded = true;
-    
-        emit RefundSuccess(msg.sender, _txn.amount);
 
+        emit RefundSuccess(msg.sender, _txn.amount);
     }
 
-    function getRefundAmountWithBonus(uint256 _amount) internal view returns (uint256) {
+    function getRefundAmountWithBonus(
+        uint256 _amount
+    ) internal view returns (uint256) {
         uint256 factor = 1e18;
-        uint256 scalledPercentage = _amount * loyaltyBonus * factor / 100;
+        uint256 scalledPercentage = (_amount * loyaltyBonus * factor) / 100;
         return _amount + (scalledPercentage / factor);
     }
 
