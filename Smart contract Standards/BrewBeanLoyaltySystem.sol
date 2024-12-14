@@ -21,8 +21,6 @@ interface ILoyaltyPoints {
 }
 
 abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
-    uint256 shopId;
-
     struct RewardConditions {
         uint256 minimumSpendingTarget;
         uint256 rewardPercentage;
@@ -32,45 +30,48 @@ abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
         uint256 id;
         string shopName;
         address shopOwner;
-        RewardConditions conditions;
-        // Tracks the spending and loyalty points of each customer of the shop
-        mapping(address customer => mapping(uint256 spending => uint256 points)) loyalCustomers;
+        bool isAuthorized;
     }
 
-    mapping(uint256 shopId => mapping(CofeeShop shop => bool isAuthorized)) cofeeShops;
+    uint256 internal shopId;
+    // Contains all shops
+    mapping(uint256 shopId => CofeeShop shop) public cofeeShops;
+    // Cofee shop's reward conditions
+    mapping(uint256 shopId => RewardConditions) public rewardConditions;
+    // Customer spendings for a specific shop
+    mapping(uint256 shopId => mapping(address customer => uint256 spendings))
+        public customerSpendingsForShop;
+    // Customer BPP points, issued by a specific shop
+    mapping(uint256 shopId => mapping(address customer => uint256 points))
+        public customerPointsForShop;
+    // Total customer BPP points from all shops
+    mapping(address customer => uint256 points) public totalCustomerBBPoints;
+    // Allowance for withdrawals
+    mapping(uint256 shopId => mapping(address approver => mapping(address spender => uint256 points)))
+        public allowance;
 
     event Rewarded(
+        uint256 indexed _shopId,
         address indexed customer,
-        CofeeShop indexed shop,
         uint256 indexed points
     );
     event Redeemed(
+        uint256 indexed _shopId,
         address indexed customer,
-        CofeeShop indexed shop,
         uint256 indexed points
     );
 
-    modifier _isAuthCofeeShop(uint256 _shopId) {
-        require(cofeeShops[_shopId] != false, "!auth shop");
-        _;
-    }
+    function _getRewardPoints(
+        uint256 _shopId,
+        address _customer
+    ) internal view returns (uint256 _points) {
+        RewardConditions memory _conditions = rewardConditions[_shopId];
+        uint256 _spendings = customerSpendingsForShop[_shopId][_customer];
 
-    // verify if a customer is eligible for points
-    modifier _authorizeReward(uint256 _shopId, address _customer) {
-        CofeeShop _shop = _getShop(_shopId);
-
-        require(
-            _shop[_customer] >=
-                cofeeShops[_shopId].conditions.minimumSpendingTarget,
-            "!minimum spending target"
-        );
-        _;
-    }
-
-    function _getShop(
-        uint256 _shopId
-    ) internal view _isAuthCofeeShop(_shopId) returns (CofeeShop) {
-        return cofeeShops[_shopId];
+        uint256 factor = 1e18;
+        uint256 scalledPercentage = (_conditions.rewardPercentage * factor) /
+            100;
+        _points = (_spendings * scalledPercentage) / factor;
     }
 
     function rewardPoints(
@@ -78,15 +79,35 @@ abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
         address _customer
     )
         external
-        _isAuthCofeeShop(_shopId)
-        _authorizeReward(_shopId, _customer)
+        virtual
+        isPartnerCofeeShop(_shopId)
+        authorizeReward(_shopId, _customer)
         returns (uint256 points)
-    {}
+    {
+        points = _getRewardPoints(_shopId, _customer);
+        customerPointsForShop[_shopId][_customer] += points;
+    }
 
     function redeemPoints(
         uint256 _shopId,
         uint256 _points
-    ) external returns (uint256 points);
+    ) external virtual returns (uint256 points) {} // TODO
+
+    modifier isPartnerCofeeShop(uint256 _shopId) {
+        require(cofeeShops[_shopId].isAuthorized == true, "!auth shop");
+        _;
+    }
+
+    // verify if a customer is eligible for points
+    modifier authorizeReward(uint256 _shopId, address _customer) {
+        // Customer spendings >= minimum spending target
+        require(
+            customerSpendingsForShop[_shopId][_customer] >=
+                rewardConditions[_shopId].minimumSpendingTarget,
+            "!minimum spending target"
+        );
+        _;
+    }
 }
 
 contract BrewBeanPoints is BaseLoyaltyProgram {
@@ -94,9 +115,128 @@ contract BrewBeanPoints is BaseLoyaltyProgram {
     string public name = "BrewBeanPoints";
     string public symbol = "BBP";
     uint256 public decimals = 1e18;
+    uint256 public totalSupply;
 
     constructor() {
         owner = msg.sender;
+    }
+
+    event Transfer(address indexed _from, address indexed _to, uint256 _value);
+    event Approval(
+        address indexed _owner,
+        address indexed _spender,
+        uint256 _oldValue,
+        uint256 _value
+    );
+
+    error InsufficientBalance();
+
+    function createCofeeShop(
+        string calldata _shopName,
+        uint256 _minSpendingTarget,
+        uint8 _rewardPercentage
+    ) public validatePercentage(_rewardPercentage) returns (uint256 shopId) {
+        shopId++;
+
+        cofeeShops[shopId] = CofeeShop({
+            id: shopId,
+            shopName: _shopName,
+            shopOwner: msg.sender,
+            isAuthorized: false
+        });
+
+        rewardConditions[shopId] = RewardConditions({
+            minimumSpendingTarget: _minSpendingTarget,
+            rewardPercentage: _rewardPercentage
+        });
+    }
+
+    function rewardPoints(
+        uint256 _shopId,
+        address _customer
+    )
+        external
+        override
+        isPartnerCofeeShop(_shopId)
+        authorizeReward(_shopId, _customer)
+        returns (uint256 points)
+    {
+        points = _getRewardPoints(_shopId, _customer);
+        customerPointsForShop[_shopId][_customer] += points;
+        totalSupply += points;
+        totalCustomerBBPoints[_customer] += points;
+    }
+
+    // Total BBP tokens for a customer
+    function balanceOf(address _owner) public view returns (uint256 balance) {
+        return totalCustomerBBPoints[_owner];
+    }
+
+    // Tranfers BPP tokens for a specific shop
+    function transfer(
+        address _to,
+        uint256 _value,
+        uint256 _shopId
+    ) public hasBalance(_shopId, msg.sender, _value) returns (bool success) {
+        customerPointsForShop[_shopId][msg.sender] -= _value;
+        customerPointsForShop[_shopId][_to] += _value;
+
+        emit Transfer(msg.sender, _to, _value);
+        return true;
+    }
+
+    // Transfers _value amount of tokens from address _from to address _to, and MUST fire the Transfer event.
+
+    // The transferFrom method is used for a withdraw workflow, allowing contracts to transfer tokens on your behalf.
+    // This can be used for example to allow a contract to transfer tokens on your behalf and/or to
+    // charge fees in sub-currencies. The function SHOULD throw unless the _from account has deliberately authorized
+    // the sender of the message via some mechanism.
+
+    // function transferFrom(
+    //     address _from,
+    //     address _to,
+    //     uint256 _value,
+    //     uint256 _shopId
+    // ) public returns (bool success) {
+    //  _value = allowance[_shopId][msg.sender][_spender];
+    //allowance[_shopId][....][_spender] = 0;
+    // allowance[_shopId][....][.....] = _value;
+
+    //     emit Transfer(msg.sender, _to, _value);
+    //     return true;
+    // }
+
+    // Allows _spender to withdraw from your account for a specific shop, up to the _value amount.
+    // Clients SHOULD make sure to create user interfaces in such a way that they set the allowance first to 0 before setting it to another value for the same spender
+    function approve(
+        address _spender,
+        uint256 _shopId,
+        uint256 _currentValue,
+        uint256 _value
+    ) public validAddress(_spender) returns (bool success) {
+        if (allowance[_shopId][msg.sender][_spender] == _currentValue) {
+            allowance[_shopId][msg.sender][_spender] = _value;
+            emit Approval(msg.sender, _spender, _currentValue, _value);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // function redeemPoints(
+    //     uint256 shopId,
+    //     uint256 _points
+    // ) external override returns (uint256 points) {}
+
+    modifier hasBalance(
+        uint256 _shopId,
+        address _customer,
+        uint256 _value
+    ) {
+        if (customerPointsForShop[_shopId][_customer] < _value) {
+            revert InsufficientBalance();
+        }
+        _;
     }
 
     modifier onlyPartner(uint256 _id) {
@@ -122,20 +262,8 @@ contract BrewBeanPoints is BaseLoyaltyProgram {
         _;
     }
 
-    function createCofeeShop(
-        string calldata _shopName,
-        uint256 _minSpendingTarget,
-        uint256 _rewardPercentage
-    ) public validatePercentage(_rewardPercentage) returns (uint256 shopId) {
-        shopId++;
-        cofeeShops[shopId] = new CofeeShop({
-            id: shopId,
-            shopName: _shopName,
-            shopOwner: msg.sender,
-            conditions: RewardConditions({
-                minimumSpendingTarget: _minSpendingTarget,
-                rewardPercentage: _rewardPercentage
-            })
-        });
+    modifier validAddress(address _spender) {
+        require(_spender != address(0), "!zero address");
+        _;
     }
 }
