@@ -64,6 +64,9 @@ abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
         uint256 indexed points
     );
 
+    ////////// Errors //////////
+    error InsufficientBalance();
+
     function rewardPoints(
         uint256 _shopId,
         address _customer
@@ -76,12 +79,26 @@ abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
     {
         points = _getRewardPoints(_shopId, _customer);
         customerPointsForShop[_shopId][_customer] += points;
+
+        emit Rewarded(_shopId, _customer, points);
     }
 
     function redeemPoints(
         uint256 _shopId,
         uint256 _points
-    ) external virtual isPartnerCofeeShop(_shopId) returns (uint256 points) {} // TODO
+    )
+        external
+        virtual
+        isPartnerCofeeShop(_shopId)
+        hasBalance(_shopId, msg.sender, _points)
+        returns (uint256 points)
+    {
+        uint256 _currentPoints = customerPointsForShop[_shopId][msg.sender];
+
+        customerPointsForShop[_shopId][msg.sender] = _currentPoints - _points;
+
+        emit Redeemed(_shopId, msg.sender, _points);
+    }
 
     function _getRewardPoints(
         uint256 _shopId,
@@ -111,6 +128,17 @@ abstract contract BaseLoyaltyProgram is ILoyaltyPoints {
         );
         _;
     }
+
+    modifier hasBalance(
+        uint256 _shopId,
+        address _customer,
+        uint256 _points
+    ) {
+        if (customerPointsForShop[_shopId][_customer] < _points) {
+            revert InsufficientBalance();
+        }
+        _;
+    }
 }
 
 contract BrewBeanPoints is BaseLoyaltyProgram {
@@ -134,7 +162,6 @@ contract BrewBeanPoints is BaseLoyaltyProgram {
     );
 
     ////////// Errors //////////
-    error InsufficientBalance();
     error UnauthorizedSpender();
 
     function createCofeeShop(
@@ -242,22 +269,6 @@ contract BrewBeanPoints is BaseLoyaltyProgram {
         } else {
             return false;
         }
-    }
-
-    // function redeemPoints(
-    //     uint256 shopId,
-    //     uint256 _points
-    // ) external override returns (uint256 points) {}
-
-    modifier hasBalance(
-        uint256 _shopId,
-        address _customer,
-        uint256 _value
-    ) {
-        if (customerPointsForShop[_shopId][_customer] < _value) {
-            revert InsufficientBalance();
-        }
-        _;
     }
 
     modifier onlyPartner(uint256 _id) {
